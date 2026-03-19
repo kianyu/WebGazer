@@ -1,0 +1,3 @@
+# ignore large binary/wasm files if desired — remove lines to include them
+# mediapipe/face_mesh/*.wasm
+# mediapipe/face_mesh/*.data

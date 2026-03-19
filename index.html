@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebGazer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: sans-serif;
+      background: #0f0f0f;
+      color: #eee;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Gaze dot ── */
+    #gaze-dot {
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255, 80, 80, 0.75);
+      border: 2px solid #fff;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      z-index: 9999;
+      display: none;
+      box-shadow: 0 0 12px 4px rgba(255, 80, 80, 0.5);
+      transition: left 0.04s linear, top 0.04s linear;
+    }
+
+    /* ── Screens ── */
+    .screen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 40px;
+    }
+
+    #screen-intro { z-index: 100; background: #0f0f0f; }
+    #screen-calibration { z-index: 90; background: #0f0f0f; display: none; }
+    #screen-done { z-index: 80; background: #0f0f0f; display: none; }
+
+    h1 { font-size: 2rem; color: #fff; text-align: center; }
+    p  { color: #aaa; text-align: center; max-width: 500px; line-height: 1.6; }
+
+    button {
+      margin-top: 10px;
+      padding: 12px 32px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #e04040;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #c03030; }
+
+    /* ── Calibration dots ── */
+    .cal-dot {
+      position: fixed;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #4a9eff;
+      border: 3px solid #fff;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+      z-index: 95;
+      box-shadow: 0 0 10px 3px rgba(74, 158, 255, 0.5);
+      transition: transform 0.15s, background 0.15s;
+      animation: pulse 1.2s infinite;
+    }
+    .cal-dot:hover { transform: translate(-50%, -50%) scale(1.3); background: #80c0ff; }
+    .cal-dot.clicked { background: #50e090; border-color: #fff; animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 6px 2px rgba(74, 158, 255, 0.4); }
+      50%       { box-shadow: 0 0 16px 6px rgba(74, 158, 255, 0.7); }
+    }
+
+    /* ── Progress bar ── */
+    #cal-progress-wrap {
+      position: fixed;
+      top: 25vh;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 96;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    #cal-label { font-size: 0.85rem; color: #aaa; }
+    #cal-bar-bg {
+      width: 220px;
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #cal-bar {
+      height: 100%;
+      width: 0%;
+      background: #4a9eff;
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+
+    /* ── Tracking info ── */
+    #info-panel {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 9998;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.8rem;
+      color: #ccc;
+      display: none;
+      line-height: 1.8;
+    }
+    #info-panel span { color: #fff; font-weight: bold; }
+
+    #btn-recalibrate {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 9998;
+      display: none;
+      padding: 8px 20px;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Gaze indicator -->
+  <div id="gaze-dot"></div>
+
+  <!-- Info overlay (shown during tracking) -->
+  <div id="info-panel">
+    Gaze X: <span id="info-x">-</span><br>
+    Gaze Y: <span id="info-y">-</span><br>
+    Status: <span id="info-status">tracking</span>
+  </div>
+
+  <!-- Recalibrate button -->
+  <button id="btn-recalibrate">Recalibrate</button>
+
+  <!-- Calibration progress -->
+  <div id="cal-progress-wrap">
+    <div id="cal-label">Click all dots to calibrate</div>
+    <div id="cal-bar-bg"><div id="cal-bar"></div></div>
+    <p style="color:#555; pointer-events:none; margin-top:8px; font-size:0.85rem;">Look at each blue dot and click it</p>
+  </div>
+
+  <!-- ── Screen: Intro ── -->
+  <div class="screen" id="screen-intro">
+    <h1>WebGazer</h1>
+    <p>You'll be shown <strong>9 calibration dots</strong>. Click each one carefully while looking directly at it.</p>
+    <button id="btn-start">Start Calibration</button>
+  </div>
+
+  <!-- ── Screen: Calibration ── -->
+  <div class="screen" id="screen-calibration"></div>
+
+  <!-- ── Screen: Done ── -->
+  <div class="screen" id="screen-done">
+    <h1>Calibration Complete</h1>
+    <p>The red dot will now follow your gaze. Move your eyes around the screen.</p>
+    <p style="color:#aaa; font-size:0.85rem;">Tip: Re-calibrate if accuracy seems off.</p>
+  </div>
+
+  <!-- WebGazer -->
+  <script src="webgazer.js"></script>
+
+  <script>
+    // ── Config ──────────────────────────────────────────────────────────────
+    const CLICKS_PER_DOT = 3;   // how many times each dot must be clicked
+    const SMOOTH = 0.25;         // gaze smoothing (0 = raw, 1 = never moves)
+
+    // 9 calibration positions as percentages of viewport
+    const CAL_POSITIONS = [
+      [5, 5],  [50, 5],  [95, 5],
+      [5, 50], [50, 50], [95, 50],
+      [5, 95], [50, 95], [95, 95],
+    ];
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let calDots = [];
+    let clickCounts = [];
+    let totalClicks = 0;
+    const totalNeeded = CAL_POSITIONS.length * CLICKS_PER_DOT;
+
+    let gazeX = 0, gazeY = 0;         // smoothed gaze position
+    let trackingActive = false;
+
+    // ── Elements ─────────────────────────────────────────────────────────────
+    const gazeDot        = document.getElementById('gaze-dot');
+    const infoPanelEl    = document.getElementById('info-panel');
+    const infoX          = document.getElementById('info-x');
+    const infoY          = document.getElementById('info-y');
+    const infoStatus     = document.getElementById('info-status');
+    const calBar         = document.getElementById('cal-bar');
+    const calProgressWrap = document.getElementById('cal-progress-wrap');
+    const btnRecalibrate = document.getElementById('btn-recalibrate');
+
+    const screenIntro   = document.getElementById('screen-intro');
+    const screenCal     = document.getElementById('screen-calibration');
+    const screenDone    = document.getElementById('screen-done');
+
+    // ── Show screen helper ────────────────────────────────────────────────────
+    function showScreen(el) {
+      [screenIntro, screenCal, screenDone].forEach(s => s.style.display = 'none');
+      el.style.display = 'flex';
+    }
+
+    // ── Build calibration dots ────────────────────────────────────────────────
+    function buildCalDots() {
+      // remove old
+      calDots.forEach(d => d.remove());
+      calDots = [];
+      clickCounts = new Array(CAL_POSITIONS.length).fill(0);
+      totalClicks = 0;
+
+      CAL_POSITIONS.forEach(([px, py], i) => {
+        const dot = document.createElement('div');
+        dot.className = 'cal-dot';
+        dot.style.left = px + 'vw';
+        dot.style.top  = py + 'vh';
+        dot.dataset.index = i;
+
+        dot.addEventListener('click', () => onCalDotClick(i, dot));
+        document.body.appendChild(dot);
+        calDots.push(dot);
+      });
+
+      calBar.style.width = '0%';
+      calProgressWrap.style.display = 'flex';
+    }
+
+    function onCalDotClick(i, dot) {
+      if (clickCounts[i] >= CLICKS_PER_DOT) return;
+
+      clickCounts[i]++;
+      totalClicks++;
+
+      // visual feedback
+      dot.style.transform = 'translate(-50%,-50%) scale(0.8)';
+      setTimeout(() => dot.style.transform = '', 120);
+
+      if (clickCounts[i] >= CLICKS_PER_DOT) {
+        dot.classList.add('clicked');
+        dot.style.pointerEvents = 'none';
+      }
+
+      // progress bar
+      calBar.style.width = (totalClicks / totalNeeded * 100) + '%';
+
+      // all done?
+      if (totalClicks >= totalNeeded) {
+        setTimeout(finishCalibration, 400);
+      }
+    }
+
+    // ── Finish calibration ────────────────────────────────────────────────────
+    function finishCalibration() {
+      calDots.forEach(d => d.remove());
+      calDots = [];
+      calProgressWrap.style.display = 'none';
+
+      showScreen(screenDone);
+      setTimeout(() => {
+        screenDone.style.display = 'none';
+        startTracking();
+      }, 2000);
+    }
+
+    // ── Start tracking ────────────────────────────────────────────────────────
+    function startTracking() {
+      trackingActive = true;
+      gazeDot.style.display = 'block';
+      infoPanelEl.style.display = 'block';
+      btnRecalibrate.style.display = 'block';
+    }
+
+    // ── WebGazer gaze listener ────────────────────────────────────────────────
+    webgazer.setGazeListener((data, _elapsedTime) => {
+      if (!data || !trackingActive) return;
+
+      // exponential moving average smoothing
+      gazeX += SMOOTH * (data.x - gazeX);
+      gazeY += SMOOTH * (data.y - gazeY);
+
+      gazeDot.style.left = gazeX + 'px';
+      gazeDot.style.top  = gazeY + 'px';
+
+      infoX.textContent = Math.round(gazeX);
+      infoY.textContent = Math.round(gazeY);
+    });
+
+    // ── Init WebGazer (hidden video + no default dot) ─────────────────────────
+    async function initWebGazer() {
+      try {
+        await webgazer
+          .setRegression('ridge')
+          .setTracker('TFFacemesh')
+          .showVideo(false)
+          .showFaceOverlay(false)
+          .showFaceFeedbackBox(false)
+          .showPredictionPoints(false)
+          .begin();
+
+        webgazer.showVideo(false);
+        infoStatus.textContent = 'ready';
+      } catch (err) {
+        console.error('WebGazer init error:', err);
+        infoStatus.textContent = 'error';
+        alert('Could not access webcam: ' + err.message);
+      }
+    }
+
+    // ── Start button ──────────────────────────────────────────────────────────
+    document.getElementById('btn-start').addEventListener('click', async () => {
+      showScreen(screenCal);
+      await initWebGazer();
+      buildCalDots();
+    });
+
+    // ── Recalibrate button ────────────────────────────────────────────────────
+    btnRecalibrate.addEventListener('click', () => {
+      trackingActive = false;
+      gazeDot.style.display = 'none';
+      infoPanelEl.style.display = 'none';
+      btnRecalibrate.style.display = 'none';
+
+      webgazer.clearData();
+
+      showScreen(screenCal);
+      buildCalDots();
+    });
+  </script>
+</body>
+</html>
