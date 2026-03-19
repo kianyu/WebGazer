@@ -141,12 +141,30 @@
       padding: 8px 20px;
       font-size: 0.85rem;
     }
+
+    #no-face-banner {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 9997;
+      background: rgba(180, 40, 40, 0.85);
+      color: #fff;
+      padding: 12px 28px;
+      border-radius: 10px;
+      font-size: 1rem;
+      pointer-events: none;
+      display: none;
+    }
   </style>
 </head>
 <body>
 
   <!-- Gaze indicator -->
   <div id="gaze-dot"></div>
+
+  <!-- No face detected banner -->
+  <div id="no-face-banner">No face detected</div>
 
   <!-- Info overlay (shown during tracking) -->
   <div id="info-panel">
@@ -296,8 +314,27 @@
     }
 
     // ── WebGazer gaze listener ────────────────────────────────────────────────
+    const noFaceBanner = document.getElementById('no-face-banner');
+
     webgazer.setGazeListener((data, _elapsedTime) => {
-      if (!data || !trackingActive) return;
+      if (!trackingActive) return;
+
+      if (!data) {
+        // No face detected
+        gazeX = -1;
+        gazeY = -1;
+        gazeDot.style.display = 'none';
+        noFaceBanner.style.display = 'block';
+        infoX.textContent = -1;
+        infoY.textContent = -1;
+        infoStatus.textContent = 'no face';
+        return;
+      }
+
+      // Face detected — hide banner, show dot
+      noFaceBanner.style.display = 'none';
+      gazeDot.style.display = 'block';
+      infoStatus.textContent = 'tracking';
 
       // exponential moving average smoothing
       gazeX += SMOOTH * (data.x - gazeX);
@@ -342,6 +379,7 @@
     btnRecalibrate.addEventListener('click', () => {
       trackingActive = false;
       gazeDot.style.display = 'none';
+      noFaceBanner.style.display = 'none';
       infoPanelEl.style.display = 'none';
       btnRecalibrate.style.display = 'none';
 
