@@ -331,7 +331,7 @@
         point_px: Math.round(window.innerWidth  * px / 100),
         point_py: Math.round(window.innerHeight * py / 100),
         click_n: clickN,
-        t: Date.now() - sessionStart,
+        ms_since_session_start: Date.now() - sessionStart,
         frame: captureWebcamFrame()
       });
 
@@ -392,7 +392,7 @@
         infoX.textContent = -1;
         infoY.textContent = -1;
         infoStatus.textContent = 'no face';
-        gazeLog.push({ x: -1, y: -1, t: Date.now() - sessionStart });
+        gazeLog.push({ x: -1, y: -1, ms_since_session_start: Date.now() - sessionStart });
         recordCount.textContent = gazeLog.length + ' samples recorded';
         return;
       }
@@ -412,7 +412,7 @@
       infoX.textContent = Math.round(gazeX);
       infoY.textContent = Math.round(gazeY);
 
-      gazeLog.push({ x: Math.round(gazeX), y: Math.round(gazeY), t: Date.now() - sessionStart });
+      gazeLog.push({ x: Math.round(gazeX), y: Math.round(gazeY), ms_since_session_start: Date.now() - sessionStart });
       recordCount.textContent = gazeLog.length + ' samples recorded';
     });
 
