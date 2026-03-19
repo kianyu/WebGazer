@@ -142,6 +142,28 @@
       font-size: 0.85rem;
     }
 
+    #btn-export {
+      position: fixed;
+      bottom: 20px;
+      right: 150px;
+      z-index: 9998;
+      display: none;
+      padding: 8px 20px;
+      font-size: 0.85rem;
+      background: #2a7a2a;
+    }
+    #btn-export:hover { background: #1e5e1e; }
+
+    #record-count {
+      position: fixed;
+      bottom: 56px;
+      right: 20px;
+      z-index: 9998;
+      font-size: 0.75rem;
+      color: #555;
+      display: none;
+    }
+
     #no-face-banner {
       position: fixed;
       top: 50%;
@@ -175,6 +197,12 @@
 
   <!-- Recalibrate button -->
   <button id="btn-recalibrate">Recalibrate</button>
+
+  <!-- Export button -->
+  <button id="btn-export">Export JSON</button>
+
+  <!-- Gaze sample counter -->
+  <div id="record-count">0 samples recorded</div>
 
   <!-- Calibration progress -->
   <div id="cal-progress-wrap">
@@ -224,6 +252,11 @@
     let gazeX = 0, gazeY = 0;         // smoothed gaze position
     let trackingActive = false;
 
+    // Recording
+    let gazeLog = [];          // [{x, y, t}, ...]
+    let calibrationLog = [];   // [{point_x, point_y, click_n, t, frame}, ...]
+    let sessionStart = null;
+
     // ── Elements ─────────────────────────────────────────────────────────────
     const gazeDot        = document.getElementById('gaze-dot');
     const infoPanelEl    = document.getElementById('info-panel');
@@ -233,6 +266,8 @@
     const calBar         = document.getElementById('cal-bar');
     const calProgressWrap = document.getElementById('cal-progress-wrap');
     const btnRecalibrate = document.getElementById('btn-recalibrate');
+    const btnExport      = document.getElementById('btn-export');
+    const recordCount    = document.getElementById('record-count');
 
     const screenIntro   = document.getElementById('screen-intro');
     const screenCal     = document.getElementById('screen-calibration');
@@ -244,13 +279,27 @@
       el.style.display = 'flex';
     }
 
+    // ── Webcam frame capture ──────────────────────────────────────────────────
+    function captureWebcamFrame() {
+      const video = document.querySelector('video');
+      if (!video || video.readyState < 2) return null;
+      const W = 320, H = Math.round(320 * video.videoHeight / (video.videoWidth || 1));
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      canvas.getContext('2d').drawImage(video, 0, 0, W, H);
+      return canvas.toDataURL('image/jpeg', 0.6);
+    }
+
     // ── Build calibration dots ────────────────────────────────────────────────
     function buildCalDots() {
-      // remove old
+      // remove old dots and reset logs
       calDots.forEach(d => d.remove());
       calDots = [];
       clickCounts = new Array(CAL_POSITIONS.length).fill(0);
       totalClicks = 0;
+      calibrationLog = [];
+      gazeLog = [];
+      sessionStart = Date.now();
 
       CAL_POSITIONS.forEach(([px, py], i) => {
         const dot = document.createElement('div');
@@ -259,7 +308,7 @@
         dot.style.top  = py + 'vh';
         dot.dataset.index = i;
 
-        dot.addEventListener('click', () => onCalDotClick(i, dot));
+        dot.addEventListener('click', () => onCalDotClick(i, dot, px, py));
         document.body.appendChild(dot);
         calDots.push(dot);
       });
@@ -268,11 +317,23 @@
       calProgressWrap.style.display = 'flex';
     }
 
-    function onCalDotClick(i, dot) {
+    function onCalDotClick(i, dot, px, py) {
       if (clickCounts[i] >= CLICKS_PER_DOT) return;
 
+      const clickN = clickCounts[i];
       clickCounts[i]++;
       totalClicks++;
+
+      // Record calibration point + webcam frame
+      calibrationLog.push({
+        point_vw: px,
+        point_vh: py,
+        point_px: Math.round(window.innerWidth  * px / 100),
+        point_py: Math.round(window.innerHeight * py / 100),
+        click_n: clickN,
+        t: Date.now() - sessionStart,
+        frame: captureWebcamFrame()
+      });
 
       // visual feedback
       dot.style.transform = 'translate(-50%,-50%) scale(0.8)';
@@ -311,6 +372,9 @@
       gazeDot.style.display = 'block';
       infoPanelEl.style.display = 'block';
       btnRecalibrate.style.display = 'block';
+      btnExport.style.display = 'block';
+      recordCount.style.display = 'block';
+      recordCount.textContent = '0 samples recorded';
     }
 
     // ── WebGazer gaze listener ────────────────────────────────────────────────
@@ -328,6 +392,8 @@
         infoX.textContent = -1;
         infoY.textContent = -1;
         infoStatus.textContent = 'no face';
+        gazeLog.push({ x: -1, y: -1, t: Date.now() - sessionStart });
+        recordCount.textContent = gazeLog.length + ' samples recorded';
         return;
       }
 
@@ -345,6 +411,9 @@
 
       infoX.textContent = Math.round(gazeX);
       infoY.textContent = Math.round(gazeY);
+
+      gazeLog.push({ x: Math.round(gazeX), y: Math.round(gazeY), t: Date.now() - sessionStart });
+      recordCount.textContent = gazeLog.length + ' samples recorded';
     });
 
     // ── Init WebGazer (hidden video + no default dot) ─────────────────────────
@@ -375,6 +444,24 @@
       buildCalDots();
     });
 
+    // ── Export JSON ───────────────────────────────────────────────────────────
+    function exportJSON() {
+      const session = {
+        exported_at: new Date().toISOString(),
+        screen: { width: window.innerWidth, height: window.innerHeight },
+        calibration: calibrationLog,
+        gaze: gazeLog
+      };
+      const blob = new Blob([JSON.stringify(session, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'webgazer_session_' + Date.now() + '.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    btnExport.addEventListener('click', exportJSON);
+
     // ── Recalibrate button ────────────────────────────────────────────────────
     btnRecalibrate.addEventListener('click', () => {
       trackingActive = false;
@@ -382,6 +469,8 @@
       noFaceBanner.style.display = 'none';
       infoPanelEl.style.display = 'none';
       btnRecalibrate.style.display = 'none';
+      btnExport.style.display = 'none';
+      recordCount.style.display = 'none';
 
       webgazer.clearData();
 
